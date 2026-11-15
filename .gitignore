@@ -1,0 +1,10 @@
+build/
+out/
+.vs/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+
+third_party/downloads/
+third_party/npcap-sdk/
+third_party/PcapPlusPlus/
