@@ -23,7 +23,9 @@ function(nip_set_warnings target)
 endfunction()
 
 add_library(nip_parse
-    src/byte/ByteReader.cpp)
+    src/byte/ByteReader.cpp
+    src/model/Addresses.cpp
+    src/model/Protocol.cpp)
 target_include_directories(nip_parse PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(nip_parse PUBLIC cxx_std_17)
 nip_set_warnings(nip_parse)

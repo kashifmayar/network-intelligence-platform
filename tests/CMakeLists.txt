@@ -1,5 +1,8 @@
 add_executable(nip_tests
-    ByteReaderTest.cpp)
+    ByteReaderTest.cpp
+    AddressTest.cpp
+    ParseResultTest.cpp
+    ModelTest.cpp)
 target_link_libraries(nip_tests PRIVATE nip_parse GTest::gtest_main)
 nip_set_warnings(nip_tests)
 if(MINGW)
