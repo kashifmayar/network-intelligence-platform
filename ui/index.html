@@ -262,6 +262,53 @@
     .error { color: var(--malformed); min-height: 1.2em; }
     .error.shake { animation: shake 0.4s ease; }
     .loading { color: var(--muted); padding: 28px 8px; }
+    .graph-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+    .graph-grid .wide { grid-column: 1 / -1; }
+    .graph-grid article { margin-top: 0; }
+    .donut-wrap { display: flex; align-items: center; gap: 18px; }
+    .donut { width: 132px; height: 132px; flex: none; }
+    .donut text { fill: var(--text); font-size: 18px; font-weight: 700; }
+    .donut circle { transition: stroke-dasharray 0.7s ease, stroke-dashoffset 0.7s ease; }
+    .legend-col { display: grid; gap: 7px; min-width: 140px; font-size: 13px; }
+    .legend-row { display: grid; grid-template-columns: 8px 1fr auto; gap: 8px; align-items: center; }
+    .legend-row i { width: 8px; height: 8px; border-radius: 2px; }
+    .legend-row b { font-variant-numeric: tabular-nums; }
+    .columns { width: 100%; height: auto; display: block; }
+    .columns .axis { fill: var(--muted); font-size: 11px; font-family: "Segoe UI", sans-serif; }
+    .columns .val { fill: var(--text); font-size: 12px; font-weight: 700; font-family: "Segoe UI", sans-serif; }
+    .columns rect { transition: y 0.55s ease, height 0.55s ease; }
+    .bar-row {
+      display: grid;
+      grid-template-columns: 150px 1fr 32px;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+      margin: 0 0 6px;
+      padding: 5px 6px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+    .bar-row:hover, .bar-row.on { background: rgba(94, 234, 212, 0.1); }
+    .bar-row span:first-child { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #08131c; }
+    .bar i { display: block; height: 100%; width: 0; transition: width 0.55s cubic-bezier(0.2, 0.8, 0.2, 1); }
+    .bar .dst { background: var(--accent-2); }
+    .bar .src { background: var(--accent); }
+    .bar .type { background: var(--type); }
+    .bar .ip { background: var(--ip); }
+    .bar .payload { background: var(--payload); }
+    .bar .rest, .bar .bad { background: #64748b; }
+    .bar-n { color: var(--muted); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
     @keyframes rise {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: none; }
@@ -289,7 +336,8 @@
       header { display: block; }
       .meters { margin-top: 12px; }
       .meter { display: inline-block; margin: 0 8px 8px 0; }
-      main { grid-template-columns: 1fr; }
+      main, .graph-grid { grid-template-columns: 1fr; }
+      .graph-grid .wide { grid-column: auto; }
       aside { max-height: 220px; }
       section { max-height: none; }
     }
@@ -322,6 +370,20 @@
       <div id="samples"></div>
     </aside>
     <section>
+      <div class="graph-grid">
+        <article>
+          <h2>Parse outcomes</h2>
+          <div id="status-chart" class="note">Waiting for samples…</div>
+        </article>
+        <article>
+          <h2>Protocols in the samples</h2>
+          <div id="protocol-chart"></div>
+        </article>
+        <article class="wide">
+          <h2>Bytes in each frame</h2>
+          <div id="size-chart"></div>
+        </article>
+      </div>
       <div id="detail" class="loading">Loading sample frames…</div>
       <article>
         <h2>Paste a frame</h2>
@@ -340,6 +402,11 @@
     const meterBytes = document.getElementById("m-bytes");
     const meterType = document.getElementById("m-type");
     const meterProto = document.getElementById("m-proto");
+    const statusChart = document.getElementById("status-chart");
+    const protocolChart = document.getElementById("protocol-chart");
+    const sizeChart = document.getElementById("size-chart");
+    let catalog = [];
+    let selectedId = null;
 
     function esc(value) {
       return String(value)
@@ -397,6 +464,104 @@
       const tail = Math.max(0, total - Math.max(14, used));
       if (tail) parts.push({ name: header ? "payload" : "after Ethernet", cls: header ? "payload" : "rest", bytes: tail });
       return parts;
+    }
+
+    function donut(slices, center) {
+      const total = slices.reduce((sum, slice) => sum + slice.value, 0) || 1;
+      const radius = 42;
+      const circumference = 2 * Math.PI * radius;
+      const gap = slices.filter((slice) => slice.value > 0).length > 1 ? 4 : 0;
+      let offset = 0;
+      const rings = slices.map((slice) => {
+        const length = Math.max(0, (slice.value / total) * circumference - (slice.value ? gap : 0));
+        const circle = `<circle cx="60" cy="60" r="${radius}" fill="none" stroke="${slice.color}" stroke-width="14" stroke-linecap="butt" stroke-dasharray="0 ${circumference.toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" data-dash="${length.toFixed(2)} ${(circumference - length).toFixed(2)}" transform="rotate(-90 60 60)"></circle>`;
+        offset += (slice.value / total) * circumference;
+        return circle;
+      }).join("");
+      const legend = slices.map((slice) => {
+        return `<div class="legend-row"><i style="background:${slice.color}"></i><span>${esc(slice.label)}</span><b>${slice.value}</b></div>`;
+      }).join("");
+      return `<div class="donut-wrap"><svg class="donut" viewBox="0 0 120 120" role="img" aria-label="Parse outcomes">${rings}<text x="60" y="66" text-anchor="middle">${esc(center)}</text></svg><div class="legend-col">${legend}</div></div>`;
+    }
+
+    function protocolColumns(samples) {
+      const counts = { TCP: 0, UDP: 0, ICMP: 0, Other: 0 };
+      samples.forEach((sample) => {
+        const ipv4 = sample.inspection.ipv4;
+        const name = ipv4 && ipv4.status === "success" ? ipv4.protocolName : "";
+        if (name === "TCP" || name === "UDP" || name === "ICMP") counts[name] += 1;
+        else counts.Other += 1;
+      });
+      const items = [
+        { label: "TCP", value: counts.TCP, color: "#7dd3fc" },
+        { label: "UDP", value: counts.UDP, color: "#5eead4" },
+        { label: "ICMP", value: counts.ICMP, color: "#86efac" },
+        { label: "Other", value: counts.Other, color: "#e2b657" }
+      ];
+      const max = Math.max(1, ...items.map((item) => item.value));
+      const width = 36;
+      const gap = 42;
+      const base = 108;
+      const plot = 80;
+      const bars = items.map((item, index) => {
+        const x = 28 + index * (width + gap);
+        const height = (item.value / max) * plot;
+        const y = base - height;
+        return `<g>
+          <text class="axis val" x="${x + width / 2}" y="${Math.max(14, y - 8)}" text-anchor="middle">${item.value}</text>
+          <rect x="${x}" y="${base}" width="${width}" height="0" rx="7" fill="${item.color}" data-y="${y.toFixed(2)}" data-h="${height.toFixed(2)}"></rect>
+          <text class="axis" x="${x + width / 2}" y="128" text-anchor="middle">${esc(item.label)}</text>
+        </g>`;
+      }).join("");
+      return `<svg class="columns" viewBox="0 0 340 140" role="img" aria-label="Protocol counts">${bars}</svg>`;
+    }
+
+    function sizeRows(samples) {
+      const max = Math.max(1, ...samples.map((sample) => sample.inspection.byteLength || 0));
+      return samples.map((sample) => {
+        const parts = segments(sample.inspection);
+        const bars = parts.map((part) => {
+          const width = ((part.bytes / max) * 100).toFixed(2);
+          return `<i class="${part.cls}" data-w="${width}%"></i>`;
+        }).join("");
+        const on = sample.id === selectedId ? " on" : "";
+        return `<button class="bar-row${on}" type="button" data-id="${esc(sample.id)}"><span>${esc(sample.title)}</span><span class="bar">${bars}</span><span class="bar-n">${esc(sample.inspection.byteLength)}</span></button>`;
+      }).join("");
+    }
+
+    function paintGraphs() {
+      const statusCounts = { success: 0, unsupported: 0, malformed: 0 };
+      catalog.forEach((sample) => {
+        const status = overallStatus(sample.inspection);
+        if (statusCounts[status] !== undefined) statusCounts[status] += 1;
+      });
+      statusChart.innerHTML = donut([
+        { label: "Success", value: statusCounts.success, color: "#3dcc9a" },
+        { label: "Unsupported", value: statusCounts.unsupported, color: "#e2b657" },
+        { label: "Malformed", value: statusCounts.malformed, color: "#ff7b72" }
+      ], String(catalog.length));
+      protocolChart.innerHTML = protocolColumns(catalog);
+      const rows = catalog.map((sample) => ({ id: sample.id, title: sample.title, inspection: sample.inspection }));
+      sizeChart.innerHTML = sizeRows(rows) + `<div class="legend" style="margin-top:8px">
+          <span><i style="background:#7dd3fc"></i>Destination</span>
+          <span><i style="background:#5eead4"></i>Source</span>
+          <span><i style="background:#fbbf24"></i>EtherType</span>
+          <span><i style="background:#a5b4fc"></i>IPv4</span>
+          <span><i style="background:#86efac"></i>Payload</span>
+          <span><i style="background:#64748b"></i>Unparsed</span>
+        </div>`;
+      requestAnimationFrame(() => {
+        statusChart.querySelectorAll("circle").forEach((circle) => {
+          circle.setAttribute("stroke-dasharray", circle.dataset.dash);
+        });
+        protocolChart.querySelectorAll("rect").forEach((rect) => {
+          rect.setAttribute("y", rect.dataset.y);
+          rect.setAttribute("height", rect.dataset.h);
+        });
+        sizeChart.querySelectorAll(".bar i").forEach((part) => {
+          part.style.width = part.dataset.w;
+        });
+      });
     }
 
     function layerTrack(inspection) {
@@ -504,22 +669,33 @@
       });
     }
 
+    function markSelected() {
+      sizeChart.querySelectorAll(".bar-row").forEach((row) => {
+        row.classList.toggle("on", row.dataset.id === selectedId);
+      });
+    }
+
     function selectSample(sample, button) {
+      selectedId = sample.id;
       document.querySelectorAll("button.sample").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       hexEl.value = (sample.inspection.hex.match(/.{1,2}/g) || []).join(" ");
       errorEl.textContent = "";
       show(sample.inspection, sample.title);
+      markSelected();
     }
 
     async function loadSamples() {
       const response = await fetch("/api/samples");
       const samples = await response.json();
+      catalog = samples;
+      paintGraphs();
       samplesEl.innerHTML = "";
       samples.forEach((sample, index) => {
         const button = document.createElement("button");
         button.className = `sample ${overallStatus(sample.inspection)}`;
         button.type = "button";
+        button.dataset.id = sample.id;
         button.style.animationDelay = `${index * 45}ms`;
         button.innerHTML = `<i class="orb"></i><span><strong>${esc(sample.title)}</strong><em>${esc(sample.note)}</em></span>`;
         button.addEventListener("click", () => selectSample(sample, button));
@@ -541,14 +717,24 @@
           errorEl.classList.add("shake");
           return;
         }
+        selectedId = "";
         document.querySelectorAll("button.sample").forEach((item) => item.classList.remove("active"));
         show(payload, "Pasted frame");
+        markSelected();
       } catch (error) {
         errorEl.textContent = "The inspector did not answer.";
         errorEl.classList.add("shake");
       } finally {
         button.disabled = false;
       }
+    });
+
+    sizeChart.addEventListener("click", (event) => {
+      const row = event.target.closest(".bar-row");
+      if (!row) return;
+      const button = samplesEl.querySelector(`button.sample[data-id="${row.dataset.id}"]`);
+      const sample = catalog.find((item) => item.id === row.dataset.id);
+      if (button && sample) selectSample(sample, button);
     });
 
     loadSamples().catch(() => {
