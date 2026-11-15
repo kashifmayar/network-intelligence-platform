@@ -27,11 +27,24 @@ add_library(nip_parse
     src/model/Addresses.cpp
     src/model/Protocol.cpp
     src/parser/EthernetParser.cpp
-    src/parser/IPv4Parser.cpp)
+    src/parser/IPv4Parser.cpp
+    src/view/Inspect.cpp)
 target_include_directories(nip_parse PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(nip_parse PUBLIC cxx_std_17)
 nip_set_warnings(nip_parse)
 add_library(nip::parse ALIAS nip_parse)
+
+set(NIP_UI_DIR "${CMAKE_SOURCE_DIR}/ui")
+string(REPLACE "\\" "/" NIP_UI_DIR "${NIP_UI_DIR}")
+add_executable(nip-view
+    src/nip_view.cpp
+    src/view/HttpServer.cpp)
+target_link_libraries(nip-view PRIVATE nip_parse)
+target_compile_definitions(nip-view PRIVATE "NIP_UI_DIR=\"${NIP_UI_DIR}\"")
+nip_set_warnings(nip-view)
+if(WIN32)
+    target_link_libraries(nip-view PRIVATE ws2_32)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)

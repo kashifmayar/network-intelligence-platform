@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NIP packet inspector</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071018;
+      --panel: rgba(14, 26, 38, 0.86);
+      --panel-solid: #0e1a26;
+      --line: rgba(148, 196, 214, 0.16);
+      --text: #e7f4f6;
+      --muted: #8eacb8;
+      --accent: #5eead4;
+      --accent-2: #7dd3fc;
+      --ip: #a5b4fc;
+      --payload: #86efac;
+      --type: #fbbf24;
+      --success: #3dcc9a;
+      --unsupported: #e2b657;
+      --malformed: #ff7b72;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(900px 420px at 8% -10%, rgba(94, 234, 212, 0.16), transparent 60%),
+        radial-gradient(700px 380px at 100% 0%, rgba(125, 211, 252, 0.12), transparent 55%),
+        linear-gradient(180deg, #0b1824 0%, var(--bg) 38%);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(125, 211, 252, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(125, 211, 252, 0.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+      mask-image: linear-gradient(180deg, #000 0%, transparent 78%);
+    }
+    header {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: center;
+      padding: 22px 28px 18px;
+    }
+    .brand { display: flex; gap: 14px; align-items: center; min-width: 0; }
+    .mark {
+      width: 42px;
+      height: 42px;
+      flex: none;
+      border-radius: 14px;
+      border: 1px solid rgba(94, 234, 212, 0.45);
+      background:
+        radial-gradient(circle at 50% 50%, transparent 0 5px, rgba(94, 234, 212, 0.95) 6px 7px, transparent 8px),
+        radial-gradient(circle at 50% 50%, transparent 0 12px, rgba(125, 211, 252, 0.7) 13px 14px, transparent 15px),
+        #0c1c28;
+      box-shadow: 0 0 24px rgba(94, 234, 212, 0.25);
+      animation: ring 2.8s ease-in-out infinite;
+    }
+    h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.03em; }
+    header p { margin: 4px 0 0; color: var(--muted); font-size: 13px; max-width: 640px; }
+    .meters { display: flex; gap: 10px; }
+    .meter {
+      min-width: 108px;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(7, 16, 24, 0.55);
+      backdrop-filter: blur(8px);
+    }
+    .meter span { display: block; color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .meter strong { display: block; margin-top: 2px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    main {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      min-height: calc(100vh - 92px);
+      padding: 0 16px 20px;
+      gap: 16px;
+    }
+    aside, section {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+    aside { padding: 14px; overflow: auto; max-height: calc(100vh - 120px); }
+    .label {
+      margin: 2px 6px 12px;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    button.sample, button.action {
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+    }
+    button.sample {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      width: 100%;
+      margin-bottom: 8px;
+      padding: 11px 12px;
+      text-align: left;
+      background: rgba(7, 16, 24, 0.35);
+      border: 1px solid transparent;
+      border-radius: 12px;
+      animation: rise 0.45s ease both;
+      transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+    }
+    button.sample:hover { transform: translateX(4px); background: rgba(94, 234, 212, 0.06); }
+    button.sample.active {
+      border-color: rgba(94, 234, 212, 0.7);
+      background: linear-gradient(90deg, rgba(94, 234, 212, 0.16), rgba(94, 234, 212, 0.04));
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    button.sample strong { display: block; font-size: 14px; }
+    button.sample em { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-style: normal; }
+    .orb {
+      width: 9px;
+      height: 9px;
+      margin-top: 5px;
+      flex: none;
+      border-radius: 50%;
+      background: var(--muted);
+      box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.6);
+    }
+    button.success .orb { background: var(--success); animation: pulse 2.2s ease-out infinite; }
+    button.unsupported .orb { background: var(--unsupported); }
+    button.malformed .orb { background: var(--malformed); }
+    section { padding: 16px 18px 22px; overflow: auto; max-height: calc(100vh - 120px); }
+    .stage {
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(180deg, rgba(125, 211, 252, 0.07), transparent 42%),
+        rgba(7, 16, 24, 0.45);
+      animation: rise 0.35s ease both;
+    }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .title-row h2 { margin: 0; font-size: 18px; letter-spacing: -0.02em; }
+    .bytes-chip { color: var(--muted); font-size: 12px; }
+    .badge {
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      animation: pop 0.35s ease both;
+    }
+    .success { color: var(--success); background: rgba(61, 204, 154, 0.12); }
+    .unsupported { color: var(--unsupported); background: rgba(226, 182, 87, 0.12); }
+    .malformed { color: var(--malformed); background: rgba(255, 123, 114, 0.12); }
+    .track {
+      display: flex;
+      height: 42px;
+      margin-top: 14px;
+      overflow: hidden;
+      border-radius: 12px;
+      background: #08131c;
+      border: 1px solid var(--line);
+    }
+    .seg {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
+      overflow: hidden;
+      color: #062028;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      width: 0;
+      transition: width 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .seg.dst { background: var(--accent-2); }
+    .seg.src { background: var(--accent); }
+    .seg.type { background: var(--type); }
+    .seg.ip { background: var(--ip); }
+    .seg.payload { background: var(--payload); }
+    .seg.rest, .seg.bad { background: #334155; color: #e2e8f0; }
+    .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 2px; }
+    article {
+      background: rgba(7, 16, 24, 0.42);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-top: 12px;
+      animation: rise 0.45s ease both;
+    }
+    article:nth-of-type(1) { animation-delay: 0.05s; }
+    article:nth-of-type(2) { animation-delay: 0.1s; }
+    article:nth-of-type(3) { animation-delay: 0.15s; }
+    article:nth-of-type(4) { animation-delay: 0.2s; }
+    h2 { margin: 0 0 10px; font-size: 15px; }
+    dl { display: grid; grid-template-columns: 180px 1fr; gap: 7px 12px; margin: 0; }
+    dt { color: var(--muted); }
+    dd {
+      margin: 0;
+      font-family: Consolas, "Cascadia Mono", monospace;
+      animation: rise 0.4s ease both;
+    }
+    textarea {
+      width: 100%;
+      min-height: 96px;
+      margin-top: 8px;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #071018;
+      color: var(--text);
+      font-family: Consolas, "Cascadia Mono", monospace;
+      resize: vertical;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: rgba(94, 234, 212, 0.7);
+      box-shadow: 0 0 0 4px rgba(94, 234, 212, 0.12);
+    }
+    button.action {
+      padding: 9px 14px;
+      margin-top: 10px;
+      border-radius: 999px;
+      border: 0;
+      color: #042028;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      font-weight: 700;
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+    button.action:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    button.action:active { transform: translateY(0); }
+    button.action:disabled { opacity: 0.6; cursor: progress; }
+    .hex { font-family: Consolas, "Cascadia Mono", monospace; line-height: 1.7; }
+    .hex .off { color: #56707c; margin-right: 8px; }
+    .hex b { font-weight: 650; }
+    .hex .dst { color: var(--accent-2); }
+    .hex .src { color: var(--accent); }
+    .hex .type { color: var(--type); }
+    .hex .ip { color: var(--ip); }
+    .hex .payload { color: var(--payload); }
+    .hex .rest { color: #cbd5e1; }
+    .hex .bad { color: var(--malformed); }
+    .note { color: var(--muted); font-size: 13px; }
+    .error { color: var(--malformed); min-height: 1.2em; }
+    .error.shake { animation: shake 0.4s ease; }
+    .loading { color: var(--muted); padding: 28px 8px; }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes pop {
+      from { opacity: 0; transform: scale(0.86); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(61, 204, 154, 0.55); }
+      70% { box-shadow: 0 0 0 7px rgba(61, 204, 154, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(61, 204, 154, 0); }
+    }
+    @keyframes ring {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    @keyframes shake {
+      20% { transform: translateX(-3px); }
+      40% { transform: translateX(3px); }
+      60% { transform: translateX(-2px); }
+      80% { transform: translateX(2px); }
+    }
+    @media (max-width: 860px) {
+      header { display: block; }
+      .meters { margin-top: 12px; }
+      .meter { display: inline-block; margin: 0 8px 8px 0; }
+      main { grid-template-columns: 1fr; }
+      aside { max-height: 220px; }
+      section { max-height: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="mark" aria-hidden="true"></div>
+      <div>
+        <h1>NIP packet inspector</h1>
+        <p>Watch a frame split into Ethernet and IPv4. TCP, UDP, ICMP, and PCAP files are not in this view yet.</p>
+      </div>
+    </div>
+    <div class="meters" aria-live="polite">
+      <div class="meter"><span>Frame</span><strong id="m-bytes">—</strong></div>
+      <div class="meter"><span>EtherType</span><strong id="m-type">—</strong></div>
+      <div class="meter"><span>Protocol</span><strong id="m-proto">—</strong></div>
+    </div>
+  </header>
+  <main>
+    <aside>
+      <div class="label">Sample frames</div>
+      <div id="samples"></div>
+    </aside>
+    <section>
+      <div id="detail" class="loading">Loading sample frames…</div>
+      <article>
+        <h2>Paste a frame</h2>
+        <p class="note">Hex bytes, with or without spaces. The same parsers used by the tests read this buffer.</p>
+        <textarea id="hex" spellcheck="false" placeholder="FF FF FF FF FF FF 00 0A 0B 0C 0D 0E 08 00 45 00 …"></textarea>
+        <button class="action" id="parse" type="button">Parse hex</button>
+        <p id="parse-error" class="error"></p>
+      </article>
+    </section>
+  </main>
+  <script>
+    const samplesEl = document.getElementById("samples");
+    const detailEl = document.getElementById("detail");
+    const hexEl = document.getElementById("hex");
+    const errorEl = document.getElementById("parse-error");
+    const meterBytes = document.getElementById("m-bytes");
+    const meterType = document.getElementById("m-type");
+    const meterProto = document.getElementById("m-proto");
+
+    function esc(value) {
+      return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function badge(status) {
+      const label = status || "unknown";
+      return `<span class="badge ${esc(label)}">${esc(label)}</span>`;
+    }
+
+    function row(label, value) {
+      if (value === undefined || value === null || value === "") return "";
+      return `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`;
+    }
+
+    function overallStatus(inspection) {
+      const ethernet = inspection.ethernet;
+      if (!ethernet || ethernet.status === "malformed") return "malformed";
+      if (ethernet.status !== "success") return ethernet.status;
+      if (!inspection.ipv4) return "unsupported";
+      return inspection.ipv4.status || "malformed";
+    }
+
+    function byteClass(index, inspection) {
+      const ethernet = inspection.ethernet;
+      if (!ethernet || ethernet.status === "malformed") return "bad";
+      if (index < 6) return "dst";
+      if (index < 12) return "src";
+      if (index < 14) return "type";
+      const ipv4 = inspection.ipv4;
+      if (!ipv4 || ipv4.headerLength === undefined) return ipv4 && ipv4.status === "malformed" ? "bad" : "rest";
+      if (index < 14 + ipv4.headerLength) return "ip";
+      return "payload";
+    }
+
+    function segments(inspection) {
+      const total = inspection.byteLength || 1;
+      const ethernet = inspection.ethernet;
+      if (!ethernet || ethernet.status === "malformed" || total < 14) {
+        return [{ name: "unparsed", cls: "bad", bytes: total }];
+      }
+      const parts = [
+        { name: "dst", cls: "dst", bytes: 6 },
+        { name: "src", cls: "src", bytes: 6 },
+        { name: "type", cls: "type", bytes: 2 }
+      ];
+      const ipv4 = inspection.ipv4;
+      const header = ipv4 && ipv4.headerLength ? ipv4.headerLength : 0;
+      const used = 14 + header;
+      if (header) parts.push({ name: "IPv4", cls: "ip", bytes: header });
+      const tail = Math.max(0, total - Math.max(14, used));
+      if (tail) parts.push({ name: header ? "payload" : "after Ethernet", cls: header ? "payload" : "rest", bytes: tail });
+      return parts;
+    }
+
+    function layerTrack(inspection) {
+      const parts = segments(inspection);
+      const span = parts.reduce((sum, part) => sum + part.bytes, 0) || 1;
+      const bars = parts.map((part) => {
+        const width = ((part.bytes / span) * 100).toFixed(2);
+        const label = part.bytes >= 4 ? part.name : "";
+        return `<div class="seg ${part.cls}" data-w="${width}%">${esc(label)}</div>`;
+      }).join("");
+      return `<div class="track" aria-hidden="true">${bars}</div>
+        <div class="legend">
+          <span><i style="background:#7dd3fc"></i>Destination</span>
+          <span><i style="background:#5eead4"></i>Source</span>
+          <span><i style="background:#fbbf24"></i>EtherType</span>
+          <span><i style="background:#a5b4fc"></i>IPv4</span>
+          <span><i style="background:#86efac"></i>Payload</span>
+        </div>`;
+    }
+
+    function hexLines(inspection) {
+      const bytes = (inspection.hex || "").match(/.{1,2}/g) || [];
+      const lines = [];
+      for (let i = 0; i < bytes.length; i += 16) {
+        const offset = i.toString(16).padStart(4, "0");
+        const chunk = bytes.slice(i, i + 16).map((byte, index) => {
+          return `<b class="${byteClass(i + index, inspection)}">${esc(byte)}</b>`;
+        }).join(" ");
+        lines.push(`<div><span class="off">${offset}</span>${chunk}</div>`);
+      }
+      return lines.join("");
+    }
+
+    function ethernetCard(ethernet) {
+      if (!ethernet) return "";
+      return `<article>
+        <div class="row"><h2>Ethernet</h2>${badge(ethernet.status)}</div>
+        ${ethernet.detail ? `<p class="note">${esc(ethernet.detail)}</p>` : ""}
+        <dl>
+          ${row("Destination MAC", ethernet.destination)}
+          ${row("Source MAC", ethernet.source)}
+          ${row("EtherType", ethernet.etherTypeHex)}
+          ${row("EtherType name", ethernet.etherTypeName)}
+          ${row("Payload bytes", ethernet.payloadBytes)}
+        </dl>
+      </article>`;
+    }
+
+    function flagList(ipv4) {
+      const flags = [];
+      if (ipv4.reservedFlag) flags.push("reserved");
+      if (ipv4.dontFragment) flags.push("don't fragment");
+      if (ipv4.moreFragments) flags.push("more fragments");
+      return flags.length ? flags.join(", ") : "none";
+    }
+
+    function ipv4Card(ipv4) {
+      if (!ipv4) {
+        return `<article><h2>IPv4</h2><p class="note">No IPv4 header was parsed. The Ethernet result did not hand off an IPv4 payload.</p></article>`;
+      }
+      const offset = ipv4.fragmentOffset === undefined ? "" : `${ipv4.fragmentOffset} (${ipv4.fragmentOffsetBytes} bytes)`;
+      return `<article>
+        <div class="row"><h2>IPv4</h2>${badge(ipv4.status)}</div>
+        ${ipv4.detail ? `<p class="note">${esc(ipv4.detail)}</p>` : ""}
+        <dl>
+          ${row("Version", ipv4.version)}
+          ${row("IHL", ipv4.ihl === undefined ? "" : `${ipv4.ihl} words / ${ipv4.headerLength} bytes`)}
+          ${row("Total length", ipv4.totalLength)}
+          ${row("Identification", ipv4.identification === undefined ? "" : "0x" + ipv4.identification.toString(16).toUpperCase().padStart(4, "0"))}
+          ${row("Flags", ipv4.status === "success" ? flagList(ipv4) : "")}
+          ${row("Fragment offset", offset)}
+          ${row("Initial fragment", ipv4.initialFragment === undefined ? "" : String(ipv4.initialFragment))}
+          ${row("TTL", ipv4.ttl)}
+          ${row("Protocol", ipv4.protocolName ? `${ipv4.protocolName} (${ipv4.protocol})` : "")}
+          ${row("Header checksum", ipv4.headerChecksum === undefined ? "" : "0x" + ipv4.headerChecksum.toString(16).toUpperCase().padStart(4, "0"))}
+          ${row("Source", ipv4.source)}
+          ${row("Destination", ipv4.destination)}
+          ${row("Payload bytes", ipv4.payloadBytes)}
+        </dl>
+      </article>`;
+    }
+
+    function show(inspection, title) {
+      const ethernet = inspection.ethernet || {};
+      const ipv4 = inspection.ipv4;
+      meterBytes.textContent = `${inspection.byteLength} bytes`;
+      meterType.textContent = ethernet.etherTypeName || "—";
+      meterProto.textContent = ipv4 && ipv4.protocolName ? ipv4.protocolName : "—";
+      detailEl.innerHTML = `
+        <div class="stage">
+          <div class="row title-row">
+            <h2>${esc(title || "Custom frame")}</h2>
+            ${badge(overallStatus(inspection))}
+            <span class="bytes-chip">${esc(inspection.byteLength)} bytes</span>
+          </div>
+          ${layerTrack(inspection)}
+        </div>
+        ${ethernetCard(inspection.ethernet)}
+        ${ipv4Card(inspection.ipv4)}
+        <article><h2>Bytes</h2><div class="hex">${hexLines(inspection)}</div></article>`;
+      requestAnimationFrame(() => {
+        detailEl.querySelectorAll(".seg").forEach((seg) => {
+          seg.style.width = seg.dataset.w;
+        });
+      });
+    }
+
+    function selectSample(sample, button) {
+      document.querySelectorAll("button.sample").forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      hexEl.value = (sample.inspection.hex.match(/.{1,2}/g) || []).join(" ");
+      errorEl.textContent = "";
+      show(sample.inspection, sample.title);
+    }
+
+    async function loadSamples() {
+      const response = await fetch("/api/samples");
+      const samples = await response.json();
+      samplesEl.innerHTML = "";
+      samples.forEach((sample, index) => {
+        const button = document.createElement("button");
+        button.className = `sample ${overallStatus(sample.inspection)}`;
+        button.type = "button";
+        button.style.animationDelay = `${index * 45}ms`;
+        button.innerHTML = `<i class="orb"></i><span><strong>${esc(sample.title)}</strong><em>${esc(sample.note)}</em></span>`;
+        button.addEventListener("click", () => selectSample(sample, button));
+        samplesEl.appendChild(button);
+        if (index === 0) selectSample(sample, button);
+      });
+    }
+
+    document.getElementById("parse").addEventListener("click", async () => {
+      const button = document.getElementById("parse");
+      errorEl.textContent = "";
+      errorEl.classList.remove("shake");
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/parse", { method: "POST", body: hexEl.value });
+        const payload = await response.json();
+        if (!response.ok) {
+          errorEl.textContent = payload.error || "Could not parse that hex.";
+          errorEl.classList.add("shake");
+          return;
+        }
+        document.querySelectorAll("button.sample").forEach((item) => item.classList.remove("active"));
+        show(payload, "Pasted frame");
+      } catch (error) {
+        errorEl.textContent = "The inspector did not answer.";
+        errorEl.classList.add("shake");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    loadSamples().catch(() => {
+      detailEl.textContent = "The sample list did not load.";
+    });
+  </script>
+</body>
+</html>

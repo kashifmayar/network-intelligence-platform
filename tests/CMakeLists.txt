@@ -4,7 +4,8 @@ add_executable(nip_tests
     ParseResultTest.cpp
     ModelTest.cpp
     EthernetParserTest.cpp
-    IPv4ParserTest.cpp)
+    IPv4ParserTest.cpp
+    InspectTest.cpp)
 target_link_libraries(nip_tests PRIVATE nip_parse GTest::gtest_main)
 nip_set_warnings(nip_tests)
 if(MINGW)
