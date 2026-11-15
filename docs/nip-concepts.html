@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Network Intelligence Platform — Concepts from Beginner to Advanced</title>
+  <style>
+    @page { size: A4; margin: 16mm 16mm 18mm; }
+    * { box-sizing: border-box; }
+    html { font-size: 11pt; }
+    body {
+      margin: 0;
+      color: #1c2430;
+      font-family: "Segoe UI", Calibri, sans-serif;
+      line-height: 1.45;
+    }
+    h1, h2, h3 { line-height: 1.2; color: #10243e; }
+    h1 { font-size: 22pt; margin: 0 0 8px; }
+    h2 { font-size: 15pt; margin: 22px 0 8px; break-after: avoid; border-bottom: 1px solid #d5deea; padding-bottom: 3px; }
+    h3 { font-size: 12.5pt; margin: 14px 0 4px; break-after: avoid; }
+    p { margin: 0 0 8px; }
+    ul, ol { margin: 0 0 8px; padding-left: 18px; }
+    li { margin: 2px 0; }
+    code, .mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: 0.92em; }
+    .cover { break-after: page; min-height: 250mm; display: flex; flex-direction: column; justify-content: space-between; }
+    .kicker { letter-spacing: 0.14em; text-transform: uppercase; color: #3d5a80; font-size: 10pt; margin: 0 0 12px; }
+    .subtitle { font-size: 13pt; color: #334155; max-width: 42em; }
+    .meta { color: #475569; font-size: 10pt; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; break-inside: avoid; font-size: 10pt; }
+    th, td { border: 1px solid #c5d0de; padding: 4px 6px; text-align: left; vertical-align: top; }
+    th { background: #eef3f8; }
+    .layout { width: 100%; border-collapse: collapse; margin: 8px 0 12px; break-inside: avoid; font-family: Consolas, monospace; font-size: 9pt; }
+    .layout th, .layout td { text-align: center; background: #f8fbff; }
+    .note, .exercise { border-left: 3px solid #3d5a80; background: #f4f7fb; padding: 8px 10px; margin: 8px 0 12px; break-inside: avoid; }
+    .exercise { border-left-color: #0f766e; background: #f3faf8; }
+    .answer { color: #134e4a; }
+    figure { margin: 8px 0 12px; break-inside: avoid; }
+    figcaption { font-size: 9.5pt; color: #475569; margin-top: 4px; }
+    .stack { display: grid; gap: 4px; max-width: 420px; }
+    .stack div { border: 1px solid #94a3b8; padding: 6px 8px; background: #f8fafc; }
+    .stack .outer { background: #e0e7ff; }
+    .stack .mid { background: #dbeafe; }
+    .stack .inner { background: #ecfeff; }
+    a { color: #1d4ed8; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div>
+      <p class="kicker">Network Intelligence Platform</p>
+      <h1>Packet concepts,<br>from beginner to advanced</h1>
+      <p class="subtitle">A practical guide to frames, headers, byte order, IPv4, and safe parsing. Written for the NIP parser and the local packet inspector.</p>
+    </div>
+    <p class="meta">Windows 11 · C++17 · Ethernet II and IPv4<br>Companion to the code in this repository. November 2026.</p>
+  </section>
+
+  <h2>How to use this guide</h2>
+  <p>Read it from the start if the words packet, MAC, and port are still fuzzy. If you already know what an IP address is, skim Part 1 and start at Part 2. Each part ends with a small exercise. The answers are at the back so you can try before you look.</p>
+  <p>The running inspector at <span class="mono">http://127.0.0.1:8765</span> shows the same bytes this guide describes. Start it from the project folder with <span class="mono">.\build\nip-view.exe</span> when you want to check a claim against a real parse.</p>
+  <div class="note">This guide explains ideas. It does not tell you how to attack a network. The parser only reads bytes you already have, from a sample frame or, later, from a capture file you are allowed to open.</div>
+
+  <h2>1. Beginner: what is moving on a network</h2>
+  <h3>Hosts, interfaces, and addresses</h3>
+  <p>A host is a machine that sends and receives data: a laptop, a phone, a server. The host reaches the network through an interface. On a wired PC that interface is an Ethernet port. On Wi-Fi it is a wireless adapter. Each interface has a hardware address, the MAC address, burned into or assigned to that adapter. A MAC address is 48 bits, usually written as six hex bytes, such as <span class="mono">00:0A:0B:0C:0D:0E</span>.</p>
+  <p>An IP address is a different kind of name. It identifies a host in an IP network, not one physical adapter in the same way a MAC does. IPv4 addresses are 32 bits, written as four decimal numbers, such as <span class="mono">192.168.1.10</span>. A port number is smaller still. It identifies one program on that host. Port 80 is commonly a web server. Port 53 is commonly DNS. MAC, IP, and port answer three different questions: which adapter, which machine in the IP network, and which program.</p>
+
+  <h3>A packet is an envelope inside an envelope</h3>
+  <p>People say “packet” for the whole thing that travels. More precisely, each layer adds its own header and calls the result by its own name.</p>
+  <figure>
+    <div class="stack">
+      <div class="outer">Ethernet frame: destination MAC, source MAC, EtherType, then the payload</div>
+      <div class="mid">IPv4 packet, carried inside the Ethernet payload: addresses, lengths, protocol number</div>
+      <div class="inner">TCP segment, UDP datagram, or ICMP message, carried inside the IPv4 payload</div>
+    </div>
+    <figcaption>Encapsulation. The outer header is read first. Each header says what the next header is.</figcaption>
+  </figure>
+  <p>An Ethernet frame is the link-layer envelope. An IPv4 packet is the network-layer envelope inside it. A TCP segment or UDP datagram is the transport-layer message inside the IP packet. The application data, such as an HTTP request, sits inside the transport message. Parsing means walking inward, one header at a time, and stopping when a length check fails or when the next protocol is one this program does not decode.</p>
+
+  <h3>Bits, bytes, and hexadecimal</h3>
+  <p>A bit is 0 or 1. A byte is 8 bits and can hold a number from 0 to 255. Hexadecimal writes a byte as two digits. One hex digit is 4 bits, called a nibble. <span class="mono">0x45</span> is the byte with high nibble 4 and low nibble 5. In the first byte of an IPv4 header those two nibbles are separate fields: version 4, and header length 5 words. That single byte is why the inspector’s first IPv4 sample starts with <span class="mono">45</span>.</p>
+  <table>
+    <tr><th>Hex</th><th>Binary</th><th>Decimal</th><th>In this project</th></tr>
+    <tr><td><span class="mono">0x08</span></td><td>0000 1000</td><td>8</td><td>High byte of the IPv4 EtherType</td></tr>
+    <tr><td><span class="mono">0x00</span></td><td>0000 0000</td><td>0</td><td>Low byte of that EtherType</td></tr>
+    <tr><td><span class="mono">0x45</span></td><td>0100 0101</td><td>69</td><td>IPv4 version 4, IHL 5</td></tr>
+    <tr><td><span class="mono">0xFF</span></td><td>1111 1111</td><td>255</td><td>One byte of the broadcast MAC</td></tr>
+  </table>
+
+  <h2>2. Reading bytes without lying to yourself</h2>
+  <h3>Network byte order</h3>
+  <p>When a field is wider than one byte, the bytes have an order. Network protocols use big-endian order: the first byte on the wire is the most significant. The two bytes <span class="mono">08 00</span> are the number <span class="mono">0x0800</span> (2048), which is the EtherType for IPv4. If you swapped them you would invent EtherType <span class="mono">0x0008</span>, and every later decision would be wrong.</p>
+  <p>Your CPU may be little-endian, which stores the low byte of a number at the lower address. That is an internal detail of the computer. It is not the order of bytes in a frame. <span class="mono">ByteReader::readU16Be</span> and <span class="mono">readU32Be</span> rebuild the number from the first byte as the high byte. The test <span class="mono">ByteReader.ReadsNetworkByteOrder</span> locks this down: <span class="mono">{0x08, 0x00}</span> must become <span class="mono">0x0800</span>, and the next four bytes <span class="mono">C0 A8 01 0A</span> are the 32-bit value of 192.168.1.10.</p>
+
+  <h3>Never overlay a struct on the buffer</h3>
+  <p>A tempting shortcut is a packed C struct and a cast of the packet pointer. That is a bad parser. The compiler may insert padding between fields. The CPU endianness may not match the wire. A short frame would let the cast read memory past the buffer. NIP copies fields out with checked reads. A read that would pass the end returns no value and leaves the cursor where it was. The frame is not “mostly fine.” It is malformed.</p>
+
+  <h3>Three honest outcomes</h3>
+  <table>
+    <tr><th>Status</th><th>Meaning</th><th>Example in the inspector</th></tr>
+    <tr><td>success</td><td>The header was long enough and its length fields were legal.</td><td>IPv4 TCP header</td></tr>
+    <tr><td>unsupported</td><td>The protocol was recognized and this milestone does not decode it. The bytes were not treated as valid IPv4.</td><td>IPv6 EtherType, ARP</td></tr>
+    <tr><td>malformed</td><td>A length or structure check failed. The header is not reported as valid.</td><td>Truncated Ethernet, invalid IHL</td></tr>
+  </table>
+  <p>Unsupported and malformed are different. IPv6 is a real protocol. A 13-byte buffer is not an Ethernet header. Mixing those up hides broken captures inside a pile of “unknown” packets.</p>
+
+  <h2>3. Ethernet, the outer envelope</h2>
+  <p>This milestone parses Ethernet II frames. The header is 14 bytes and does not include a preamble or checksum. Those are usually stripped by the capture device before your program sees the frame.</p>
+  <table class="layout">
+    <tr><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th></tr>
+    <tr><td colspan="6">Destination MAC</td><td colspan="6">Source MAC</td><td colspan="2">EtherType</td></tr>
+  </table>
+  <p>The destination is who should receive the frame on this link. <span class="mono">FF:FF:FF:FF:FF:FF</span> is the broadcast address: every station on the LAN. The source is the sender’s adapter. The EtherType tells you how to read the payload.</p>
+  <table>
+    <tr><th>EtherType</th><th>Meaning in NIP</th></tr>
+    <tr><td><span class="mono">0x0800</span></td><td>IPv4. Parsing continues into the payload.</td></tr>
+    <tr><td><span class="mono">0x86DD</span></td><td>IPv6. Recognized, not parsed. Status is unsupported.</td></tr>
+    <tr><td><span class="mono">0x0806</span></td><td>ARP. Known, unsupported in this milestone.</td></tr>
+    <tr><td><span class="mono">0x8100</span></td><td>VLAN tag. Unsupported until a later milestone peels the tag.</td></tr>
+    <tr><td>1500 or less</td><td>An IEEE 802.3 length, not an EtherType. Unsupported.</td></tr>
+    <tr><td>below <span class="mono">0x0600</span></td><td>Not treated as Ethernet II.</td></tr>
+  </table>
+  <p>Fewer than 14 bytes is malformed, because the three fields cannot fit. A legal 14-byte header with an empty payload is still a successful Ethernet parse. The payload view starts at byte 14 and is what the next parser receives.</p>
+  <div class="exercise"><strong>Exercise 1.</strong> In the inspector, open “IPv4 TCP header.” Which two hex bytes are the EtherType, and what number do they make?</div>
+
+  <h2>4. IPv4, the network header</h2>
+  <p>The fixed part of an IPv4 header is 20 bytes. It can be longer when options are present. The parser must discover that length before it touches anything after the header.</p>
+  <table class="layout">
+    <tr><th colspan="4">Byte 0</th><th colspan="8">Byte 1</th><th colspan="16">Bytes 2–3</th></tr>
+    <tr><td colspan="4">Version</td><td colspan="8">DSCP / ECN, skipped</td><td colspan="16">Total length</td></tr>
+    <tr><td colspan="16">Bytes 4–5 Identification</td><td colspan="16">Bytes 6–7 Flags and fragment offset</td></tr>
+    <tr><td colspan="8">Byte 8 TTL</td><td colspan="8">Byte 9 Protocol</td><td colspan="16">Bytes 10–11 Header checksum</td></tr>
+    <tr><td colspan="32">Bytes 12–15 Source address</td></tr>
+    <tr><td colspan="32">Bytes 16–19 Destination address</td></tr>
+    <tr><td colspan="32">Bytes 20 onward, only when IHL is greater than 5: options</td></tr>
+  </table>
+
+  <h3>Version and header length</h3>
+  <p>Version must be 4. Anything else is malformed for this parser, even if the bytes happen to look a bit like IPv4. The Internet Header Length (IHL) is the low nibble. It counts 32-bit words, not bytes. The byte length is IHL × 4.</p>
+  <table>
+    <tr><th>First byte</th><th>Version</th><th>IHL</th><th>Header bytes</th><th>Verdict</th></tr>
+    <tr><td><span class="mono">0x45</span></td><td>4</td><td>5</td><td>20</td><td>Minimum legal header</td></tr>
+    <tr><td><span class="mono">0x46</span></td><td>4</td><td>6</td><td>24</td><td>20 bytes plus 4 bytes of options</td></tr>
+    <tr><td><span class="mono">0x4F</span></td><td>4</td><td>15</td><td>60</td><td>Longest legal IPv4 header</td></tr>
+    <tr><td><span class="mono">0x44</span></td><td>4</td><td>4</td><td>16</td><td>Malformed. IHL must be at least 5</td></tr>
+    <tr><td><span class="mono">0x65</span></td><td>6</td><td>5</td><td>—</td><td>Malformed for the IPv4 parser. Version is not 4</td></tr>
+  </table>
+  <p>IHL 6 with only 20 captured bytes is also malformed. The header claimed 24 bytes and the buffer ran out. A complete header whose payload was cut off is different: the header parsed, and the missing tail is a short capture, not a broken header.</p>
+
+  <h3>Total length, padding, and checksum</h3>
+  <p>Total length is the IPv4 header plus its payload, in bytes. It must be at least the header length. Ethernet frames are padded to a minimum size, so the captured buffer can be longer than the IP packet. Bytes past the total length are padding and are not part of the IP payload. The sample “IPv4 TCP header” has total length 20, so the payload after the header is empty even if extra bytes were glued on the end.</p>
+  <p>The header checksum is stored and not verified in this milestone. A bad checksum does not, by itself, make the parse malformed yet. Extracting it still matters, because those two bytes have to be consumed so the addresses land on bytes 12 through 19.</p>
+  <p>TTL is the hop limit. Each router that forwards the packet decreases it. Protocol is the next header’s number: 1 is ICMP, 6 is TCP, 17 is UDP. Any other number is still a successful IPv4 parse. The next protocol is simply unsupported.</p>
+
+  <h3>Options</h3>
+  <p>Options occupy the bytes from offset 20 up to the header length. The walk is structural. It does not need to understand every option type.</p>
+  <ul>
+    <li><span class="mono">0</span> is the end of the option list. Later bytes in the options area are padding.</li>
+    <li><span class="mono">1</span> is a no-operation, one byte long. It aligns the next option.</li>
+    <li>Any other type is followed by a length byte. That length includes the type and the length byte, so it must be at least 2, and the option must end before the header ends.</li>
+  </ul>
+  <p>The “IPv4 options” sample is <span class="mono">01 01 01 00</span>: three NOPs and an end. The header is 24 bytes and the Don’t Fragment flag is set. An option that says its length is 5 while only 4 option bytes exist is malformed. The parser refuses to start the transport header at a guessed offset.</p>
+  <div class="exercise"><strong>Exercise 2.</strong> IHL is 8. How many header bytes is that, and how many of those bytes are options?</div>
+
+  <h2>5. Fragmentation</h2>
+  <p>A router may split a large IPv4 datagram into fragments. They share one identification value so the receiver can group them. The flags and offset share one 16-bit field.</p>
+  <table>
+    <tr><th>Bits</th><th>Name</th><th>Meaning</th></tr>
+    <tr><td>15</td><td>Reserved</td><td>Must be zero in normal traffic. NIP records it and does not invent a failure from it alone.</td></tr>
+    <tr><td>14</td><td>DF</td><td>Don’t Fragment. If the packet does not fit a link, it is dropped instead of split.</td></tr>
+    <tr><td>13</td><td>MF</td><td>More Fragments follow. Clear on the last fragment and on an unfragmented packet.</td></tr>
+    <tr><td>12–0</td><td>Offset</td><td>Where this fragment’s payload belongs, in units of 8 bytes.</td></tr>
+  </table>
+  <p>Offset 0 is the first fragment, including a packet that was never fragmented. The transport header, if any, starts there. Offset 5 means this fragment begins at byte 40 of the original payload. The bytes at the front of this fragment are the middle of a TCP stream or a UDP datagram, not a fresh TCP header. NIP records the IPv4 header as success and does not parse a transport header.</p>
+  <p>The sample uses flags-and-offset <span class="mono">0x2005</span>. Bit 13 is set, so More Fragments is true, and the low 13 bits are 5. The inspector shows offset 5 and 40 bytes.</p>
+  <div class="exercise"><strong>Exercise 3.</strong> A fragment has offset 32 and More Fragments set. At what byte of the original payload does this piece start? Should a TCP parser read a TCP header from it?</div>
+
+  <h2>6. Advanced: TCP, UDP, and ICMP</h2>
+  <p>These headers are the next parsing milestone. The models and the length rules already exist in the code. The inspector shows the IPv4 protocol number and stops. This section is the map for that next step.</p>
+
+  <h3>TCP</h3>
+  <p>TCP is a reliable byte stream between two ports. The fixed header is 20 bytes and can grow to 60 with options, the same word-count trick as IPv4. The data offset is a 4-bit field. Header length in bytes is data offset × 4. A data offset below 5, or a header that does not fit in the captured bytes, is malformed.</p>
+  <table>
+    <tr><th>Field</th><th>Size</th><th>What it is for</th></tr>
+    <tr><td>Source port, destination port</td><td>2 bytes each</td><td>The programs at each end</td></tr>
+    <tr><td>Sequence number</td><td>4 bytes</td><td>Where this segment sits in the byte stream</td></tr>
+    <tr><td>Acknowledgment number</td><td>4 bytes</td><td>The next byte the sender expects, meaningful when ACK is set</td></tr>
+    <tr><td>Data offset</td><td>4 bits</td><td>Header length in 32-bit words</td></tr>
+    <tr><td>Flags</td><td>bits</td><td>SYN starts a connection, ACK acknowledges, FIN and RST close or abort, PSH asks for prompt delivery</td></tr>
+    <tr><td>Window</td><td>2 bytes</td><td>How many more bytes the sender is willing to receive</td></tr>
+  </table>
+  <p>TCP and UDP both have ports. TCP adds sequence numbers and flags because it reconstructs a stream and reacts to loss. Parsing one header does not reassemble that stream. It only records the fields of this segment.</p>
+
+  <h3>UDP</h3>
+  <p>UDP is a short datagram. The header is always 8 bytes: source port, destination port, length, checksum. The length includes those 8 bytes, so a length below 8 is malformed. A length larger than the bytes still available is a truncated datagram. A length smaller than the IP payload is legal. The extra bytes are not part of this UDP datagram.</p>
+  <p>UDP does not retransmit and does not order messages. DNS queries and many real-time streams use it because a late retransmission is useless. The parser’s job is still the same: do not read a port from a buffer that does not contain four bytes of ports plus four more bytes of length and checksum.</p>
+
+  <h3>ICMP</h3>
+  <p>ICMP is a control protocol carried inside IPv4, protocol number 1. It is not a transport for application data in the way TCP and UDP are. Echo request (type 8) and echo reply (type 0) are the familiar ping. Destination unreachable (type 3) and time exceeded (type 11) report delivery problems. The fixed front of the message is type, code, and checksum. A full ICMP header is 8 bytes. Shorter than that is truncated. The checksum is extracted. This milestone does not fail the packet only because the checksum arithmetic was not run.</p>
+
+  <h3>How the three differ</h3>
+  <table>
+    <tr><th></th><th>TCP</th><th>UDP</th><th>ICMP</th></tr>
+    <tr><td>IP protocol</td><td>6</td><td>17</td><td>1</td></tr>
+    <tr><td>Ports</td><td>Yes</td><td>Yes</td><td>No</td></tr>
+    <tr><td>Minimum header</td><td>20 bytes</td><td>8 bytes</td><td>8 bytes</td></tr>
+    <tr><td>Length rule</td><td>Data offset × 4</td><td>Length field includes the header</td><td>At least 8 bytes present</td></tr>
+    <tr><td>Role</td><td>Ordered byte stream</td><td>Independent datagrams</td><td>Errors and simple queries</td></tr>
+  </table>
+  <div class="exercise"><strong>Exercise 4.</strong> An IPv4 header says protocol 17, and the next 8 bytes are a UDP header whose length field is 8. How many bytes of UDP payload are there?</div>
+
+  <h2>7. Captures, truncation, and the inspector</h2>
+  <h3>What a PCAP file will be</h3>
+  <p>A PCAP file is a recording of frames, each with a timestamp and two lengths: how many bytes were stored, and how long the frame was on the wire. A capture can be snapped short on purpose. If the stored bytes include a full IPv4 header but not the whole TCP header, the IPv4 parse can succeed and the TCP parse must be malformed. That distinction is the point of checking lengths against the buffer you actually hold, not against the length the sender wished it had sent.</p>
+  <p>The PCAP reader is not in the program yet. When it is, PcapPlusPlus will open the file and hand over raw bytes and a timestamp. It will not decode Ethernet or IP for us. The link type must be Ethernet. Another link type would be reported and left unparsed, because those bytes are not an Ethernet header. The Npcap driver is the Windows library that file reading will load. It is not installed on this machine yet, so that stage cannot run until it is.</p>
+
+  <h3>How a click in the inspector becomes fields</h3>
+  <ol>
+    <li>The page loads <span class="mono">GET /api/samples</span> or posts the hex you typed to <span class="mono">POST /api/parse</span>.</li>
+    <li><span class="mono">decodeHex</span> accepts spaces, colons, dashes, and a <span class="mono">0x</span> prefix. An odd number of digits or a character that is not hex is rejected before any parser runs.</li>
+    <li><span class="mono">inspectFrameJson</span> calls <span class="mono">parseEthernet</span> on the whole buffer.</li>
+    <li>Only a successful Ethernet parse whose EtherType is IPv4 calls <span class="mono">parseIPv4</span> on the payload view. IPv6 and ARP keep the Ethernet header and set IPv4 to null.</li>
+  </ol>
+  <p>The code that does this lives in <span class="mono">src/parser/EthernetParser.cpp</span>, <span class="mono">src/parser/IPv4Parser.cpp</span>, and <span class="mono">src/view/Inspect.cpp</span>. The tests in <span class="mono">tests/EthernetParserTest.cpp</span> and <span class="mono">tests/IPv4ParserTest.cpp</span> are the same lesson as the samples, written as byte arrays.</p>
+
+  <h3>A path through the repository</h3>
+  <table>
+    <tr><th>File</th><th>What to learn there</th></tr>
+    <tr><td><span class="mono">include/nip/byte/ByteReader.h</span></td><td>The contract: big-endian reads, no read past the end, a failed read does not advance.</td></tr>
+    <tr><td><span class="mono">include/nip/model/ParseResult.h</span></td><td>Success must carry a value. Unsupported may keep a partial header. Malformed carries a reason.</td></tr>
+    <tr><td><span class="mono">include/nip/model/Headers.h</span></td><td>Field lists, EtherType constants, and the ×4 length helpers.</td></tr>
+    <tr><td><span class="mono">src/parser/EthernetParser.cpp</span></td><td>The 14-byte split and the EtherType decisions.</td></tr>
+    <tr><td><span class="mono">src/parser/IPv4Parser.cpp</span></td><td>IHL, options, total length, and the flag word.</td></tr>
+    <tr><td><span class="mono">ui/index.html</span></td><td>How those JSON fields are shown.</td></tr>
+  </table>
+
+  <h2>8. Practice, in order</h2>
+  <ol>
+    <li>Open the IPv4 TCP sample. Write the destination MAC, source MAC, EtherType, source IP, and destination IP from the panels, then find each one in the hex pane.</li>
+    <li>Change only the EtherType in the paste box from <span class="mono">08 00</span> to <span class="mono">86 DD</span> and parse. The MAC addresses stay. The IPv4 panel should disappear and the Ethernet status should become unsupported.</li>
+    <li>Open the options sample. Confirm the first IPv4 byte is <span class="mono">46</span> and that the header length is 24.</li>
+    <li>Open the fragment sample. Compute 5 × 8 yourself before you read the “40 bytes” line.</li>
+    <li>Paste a 10-byte buffer of <span class="mono">45</span> repeated. It cannot be an IPv4 header. The status should be malformed.</li>
+    <li>Build <span class="mono">0x45</span> on paper from version and IHL, then <span class="mono">0x46</span>, then explain why <span class="mono">0x44</span> is rejected.</li>
+    <li>When you implement TCP, write a 20-byte TCP header behind a 20-byte IPv4 header and check that a data offset of 4 is rejected while 5 is accepted. Do that in a unit test with a byte array, the same way the IPv4 tests work.</li>
+  </ol>
+
+  <h2>9. Answers</h2>
+  <div class="exercise">
+    <p class="answer"><strong>Exercise 1.</strong> Bytes 12 and 13 of the frame are <span class="mono">08 00</span>. In network order that is <span class="mono">0x0800</span>, IPv4.</p>
+    <p class="answer"><strong>Exercise 2.</strong> 8 × 4 = 32 header bytes. The fixed portion is 20, so there are 12 bytes of options.</p>
+    <p class="answer"><strong>Exercise 3.</strong> 32 × 8 = 256. This piece starts at byte 256 of the original payload. A TCP header must not be parsed from it, because the offset is not zero.</p>
+    <p class="answer"><strong>Exercise 4.</strong> The UDP length includes the 8-byte header. Length 8 means the payload is 0 bytes.</p>
+  </div>
+
+  <h2>10. A compact glossary</h2>
+  <table>
+    <tr><th>Term</th><th>Meaning in this project</th></tr>
+    <tr><td>Frame</td><td>The link-layer unit. Here, an Ethernet II header plus its payload.</td></tr>
+    <tr><td>Packet</td><td>Often used loosely. Strictly, the IPv4 unit inside the frame.</td></tr>
+    <tr><td>Header</td><td>The fixed fields in front of a payload. Its length is computed, never assumed, when the protocol says it can vary.</td></tr>
+    <tr><td>Payload</td><td>The bytes after the header you just parsed. They are the next protocol, or application data, or a fragment of either.</td></tr>
+    <tr><td>Big-endian</td><td>First byte is the high byte. This is network byte order.</td></tr>
+    <tr><td>EtherType</td><td>The 16-bit field that names the Ethernet payload.</td></tr>
+    <tr><td>IHL</td><td>IPv4 header length in 32-bit words. Bytes = IHL × 4.</td></tr>
+    <tr><td>TTL</td><td>How many routers may still forward the packet.</td></tr>
+    <tr><td>Fragment offset</td><td>Position of this fragment in the original payload, in 8-byte units.</td></tr>
+    <tr><td>Port</td><td>A 16-bit number selecting a program. Used by TCP and UDP, not by the ICMP header.</td></tr>
+    <tr><td>Malformed</td><td>The bytes do not form the header they claim to be.</td></tr>
+    <tr><td>Unsupported</td><td>The header was recognized and this program does not decode that protocol yet.</td></tr>
+    <tr><td>Snap length</td><td>How many bytes of a frame were stored in a capture. It can be shorter than the frame on the wire.</td></tr>
+  </table>
+  <p>When a sentence in this guide and a test disagree, believe the test. The tests are the executable definition of the parser. This PDF is the map.</p>
+</body>
+</html>
