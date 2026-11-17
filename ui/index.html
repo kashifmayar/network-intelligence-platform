@@ -33,6 +33,8 @@
         radial-gradient(900px 420px at 8% -10%, rgba(94, 234, 212, 0.16), transparent 60%),
         radial-gradient(700px 380px at 100% 0%, rgba(125, 211, 252, 0.12), transparent 55%),
         linear-gradient(180deg, #0b1824 0%, var(--bg) 38%);
+      background-repeat: no-repeat;
+      animation: bgshift 18s ease-in-out infinite;
     }
     body::before {
       content: "";
@@ -52,6 +54,19 @@
       gap: 24px;
       align-items: center;
       padding: 22px 28px 18px;
+    }
+    header::after {
+      content: "";
+      position: absolute;
+      left: 28px;
+      right: 28px;
+      bottom: 0;
+      height: 2px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, transparent, rgba(94, 234, 212, 0.95), transparent);
+      background-size: 28% 100%;
+      background-repeat: no-repeat;
+      animation: scan 3.6s ease-in-out infinite;
     }
     .brand { display: flex; gap: 14px; align-items: center; min-width: 0; }
     .mark {
@@ -80,6 +95,7 @@
     }
     .meter span { display: block; color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
     .meter strong { display: block; margin-top: 2px; font-size: 14px; font-variant-numeric: tabular-nums; }
+    .meter strong.tick { animation: tick 0.35s ease; }
     main {
       display: grid;
       grid-template-columns: 320px 1fr;
@@ -125,7 +141,7 @@
     button.sample.active {
       border-color: rgba(94, 234, 212, 0.7);
       background: linear-gradient(90deg, rgba(94, 234, 212, 0.16), rgba(94, 234, 212, 0.04));
-      box-shadow: inset 3px 0 0 var(--accent);
+      box-shadow: inset 3px 0 0 var(--accent), 0 0 22px rgba(94, 234, 212, 0.16);
     }
     button.sample strong { display: block; font-size: 14px; }
     button.sample em { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; font-style: normal; }
@@ -166,6 +182,7 @@
     .unsupported { color: var(--unsupported); background: rgba(226, 182, 87, 0.12); }
     .malformed { color: var(--malformed); background: rgba(255, 123, 114, 0.12); }
     .track {
+      position: relative;
       display: flex;
       height: 42px;
       margin-top: 14px;
@@ -173,6 +190,17 @@
       border-radius: 12px;
       background: #08131c;
       border: 1px solid var(--line);
+    }
+    .track::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 34%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+      transform: translateX(-130%);
+      animation: sweep 1.05s 0.2s ease-out both;
+      pointer-events: none;
     }
     .seg {
       display: flex;
@@ -204,6 +232,11 @@
       padding: 14px 16px;
       margin-top: 12px;
       animation: rise 0.45s ease both;
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    article:hover {
+      border-color: rgba(94, 234, 212, 0.38);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
     }
     article:nth-of-type(1) { animation-delay: 0.05s; }
     article:nth-of-type(2) { animation-delay: 0.1s; }
@@ -250,7 +283,12 @@
     button.action:disabled { opacity: 0.6; cursor: progress; }
     .hex { font-family: Consolas, "Cascadia Mono", monospace; line-height: 1.7; }
     .hex .off { color: #56707c; margin-right: 8px; }
-    .hex b { font-weight: 650; }
+    .hex b {
+      display: inline-block;
+      font-weight: 650;
+      animation: byteIn 0.4s ease both;
+      animation-delay: calc(var(--d) * 16ms);
+    }
     .hex .dst { color: var(--accent-2); }
     .hex .src { color: var(--accent); }
     .hex .type { color: var(--type); }
@@ -271,7 +309,7 @@
     .graph-grid .wide { grid-column: 1 / -1; }
     .graph-grid article { margin-top: 0; }
     .donut-wrap { display: flex; align-items: center; gap: 18px; }
-    .donut { width: 132px; height: 132px; flex: none; }
+    .donut { width: 132px; height: 132px; flex: none; filter: drop-shadow(0 0 12px rgba(94, 234, 212, 0.28)); }
     .donut text { fill: var(--text); font-size: 18px; font-weight: 700; }
     .donut circle { transition: stroke-dasharray 0.7s ease, stroke-dashoffset 0.7s ease; }
     .legend-col { display: grid; gap: 7px; min-width: 140px; font-size: 13px; }
@@ -297,6 +335,8 @@
       font: inherit;
       text-align: left;
       cursor: pointer;
+      animation: rise 0.45s ease both;
+      animation-delay: calc(var(--i) * 40ms);
     }
     .bar-row:hover, .bar-row.on { background: rgba(94, 234, 212, 0.1); }
     .bar-row span:first-child { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -331,6 +371,25 @@
       40% { transform: translateX(3px); }
       60% { transform: translateX(-2px); }
       80% { transform: translateX(2px); }
+    }
+    @keyframes sweep {
+      to { transform: translateX(320%); }
+    }
+    @keyframes scan {
+      from { background-position: -30% 0; }
+      to { background-position: 130% 0; }
+    }
+    @keyframes bgshift {
+      0%, 100% { background-position: 0% 0%, 100% 0%, 0 0; }
+      50% { background-position: 8% 6%, 86% 4%, 0 0; }
+    }
+    @keyframes tick {
+      from { opacity: 0.2; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+    @keyframes byteIn {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: none; }
     }
     @media (max-width: 860px) {
       header { display: block; }
@@ -511,7 +570,7 @@
         const y = base - height;
         return `<g>
           <text class="axis val" x="${x + width / 2}" y="${Math.max(14, y - 8)}" text-anchor="middle">${item.value}</text>
-          <rect x="${x}" y="${base}" width="${width}" height="0" rx="7" fill="${item.color}" data-y="${y.toFixed(2)}" data-h="${height.toFixed(2)}"></rect>
+          <rect x="${x}" y="${base}" width="${width}" height="0" rx="7" fill="${item.color}" data-y="${y.toFixed(2)}" data-h="${height.toFixed(2)}" style="transition-delay:${index * 70}ms"></rect>
           <text class="axis" x="${x + width / 2}" y="128" text-anchor="middle">${esc(item.label)}</text>
         </g>`;
       }).join("");
@@ -520,14 +579,14 @@
 
     function sizeRows(samples) {
       const max = Math.max(1, ...samples.map((sample) => sample.inspection.byteLength || 0));
-      return samples.map((sample) => {
+      return samples.map((sample, index) => {
         const parts = segments(sample.inspection);
         const bars = parts.map((part) => {
           const width = ((part.bytes / max) * 100).toFixed(2);
           return `<i class="${part.cls}" data-w="${width}%"></i>`;
         }).join("");
         const on = sample.id === selectedId ? " on" : "";
-        return `<button class="bar-row${on}" type="button" data-id="${esc(sample.id)}"><span>${esc(sample.title)}</span><span class="bar">${bars}</span><span class="bar-n">${esc(sample.inspection.byteLength)}</span></button>`;
+        return `<button class="bar-row${on}" type="button" data-id="${esc(sample.id)}" style="--i:${index}"><span>${esc(sample.title)}</span><span class="bar">${bars}</span><span class="bar-n">${esc(sample.inspection.byteLength)}</span></button>`;
       }).join("");
     }
 
@@ -590,7 +649,7 @@
       for (let i = 0; i < bytes.length; i += 16) {
         const offset = i.toString(16).padStart(4, "0");
         const chunk = bytes.slice(i, i + 16).map((byte, index) => {
-          return `<b class="${byteClass(i + index, inspection)}">${esc(byte)}</b>`;
+          return `<b class="${byteClass(i + index, inspection)}" style="--d:${Math.min(i + index, 40)}">${esc(byte)}</b>`;
         }).join(" ");
         lines.push(`<div><span class="off">${offset}</span>${chunk}</div>`);
       }
@@ -646,12 +705,20 @@
       </article>`;
     }
 
+    function setMeter(element, text) {
+      if (element.textContent === text) return;
+      element.textContent = text;
+      element.classList.remove("tick");
+      void element.offsetWidth;
+      element.classList.add("tick");
+    }
+
     function show(inspection, title) {
       const ethernet = inspection.ethernet || {};
       const ipv4 = inspection.ipv4;
-      meterBytes.textContent = `${inspection.byteLength} bytes`;
-      meterType.textContent = ethernet.etherTypeName || "—";
-      meterProto.textContent = ipv4 && ipv4.protocolName ? ipv4.protocolName : "—";
+      setMeter(meterBytes, `${inspection.byteLength} bytes`);
+      setMeter(meterType, ethernet.etherTypeName || "—");
+      setMeter(meterProto, ipv4 && ipv4.protocolName ? ipv4.protocolName : "—");
       detailEl.innerHTML = `
         <div class="stage">
           <div class="row title-row">
