@@ -356,6 +356,7 @@
       <div>
         <h1>NIP packet inspector</h1>
         <p>Watch a frame split into Ethernet and IPv4. TCP, UDP, ICMP, and PCAP files are not in this view yet.</p>
+        <p id="host-note" class="note" hidden>This page is the saved sample gallery. Pasting a new frame works while the local inspector is running.</p>
       </div>
     </div>
     <div class="meters" aria-live="polite">
@@ -407,6 +408,7 @@
     const sizeChart = document.getElementById("size-chart");
     let catalog = [];
     let selectedId = null;
+    let liveParser = true;
 
     function esc(value) {
       return String(value)
@@ -686,8 +688,18 @@
     }
 
     async function loadSamples() {
-      const response = await fetch("/api/samples");
-      const samples = await response.json();
+      let samples;
+      try {
+        const response = await fetch("/api/samples");
+        if (!response.ok) throw new Error("offline");
+        samples = await response.json();
+      } catch (error) {
+        const saved = await fetch("samples.json");
+        if (!saved.ok) throw error;
+        samples = await saved.json();
+        liveParser = false;
+        document.getElementById("host-note").hidden = false;
+      }
       catalog = samples;
       paintGraphs();
       samplesEl.innerHTML = "";
@@ -708,6 +720,11 @@
       const button = document.getElementById("parse");
       errorEl.textContent = "";
       errorEl.classList.remove("shake");
+      if (!liveParser) {
+        errorEl.textContent = "Pasting a frame needs the local inspector. This page is showing the saved samples.";
+        errorEl.classList.add("shake");
+        return;
+      }
       button.disabled = true;
       try {
         const response = await fetch("/api/parse", { method: "POST", body: hexEl.value });
